@@ -1,0 +1,104 @@
+#pragma warning(disable:4996) // 보안 에러 방지
+#include<stdio.h>
+#include<stdlib.h> // 동적할당
+#include<Windows.h> // 필요한 구조체 정보 포함
+
+void main() {
+	BITMAPFILEHEADER hf1; //14bytes
+	BITMAPINFOHEADER hInfo1; // 40bytes
+	RGBQUAD hRGB1[256]; // 1024bytes
+	FILE *fp1;
+	fp1 = fopen("lenna.bmp", "rb");
+	if (fp1 == NULL) {
+		printf("File not found\n");
+		return;
+	}
+	fread(&hf1, sizeof(BITMAPFILEHEADER), 1, fp1); // fread 함수는 첫 번째 parameter로 주솟값(pointer)을 요구
+	fread(&hInfo1, sizeof(BITMAPINFOHEADER), 1, fp1);
+	fread(&hRGB1, sizeof(RGBQUAD), 256, fp1); // 배열은 이름 자체가 주솟값을 의미
+											 // header 정보를 다 읽어서 저장함.
+	int ImgSize1 = hInfo1.biWidth*hInfo1.biHeight;
+	BYTE * Image1 = (BYTE *)malloc(ImgSize1); // 원본 영상
+											  // =BYTE Image1[ImgSize1]
+	BYTE * Output1 = (BYTE *)malloc(ImgSize1); // 처리 후 영상
+	fread(Image1, sizeof(BYTE), ImgSize1, fp1);
+	fclose(fp1);
+
+	for (int i = 0;i < ImgSize1;i++) {
+		Output1[i] = Image1[i]; // 영상 그대로
+	}
+
+	fp1 = fopen("output1.bmp", "wb");
+	fwrite(&hf1, sizeof(BYTE), sizeof(BITMAPFILEHEADER), fp1);
+	fwrite(&hInfo1, sizeof(BYTE), sizeof(BITMAPINFOHEADER), fp1);
+	fwrite(hRGB1, sizeof(RGBQUAD), 256, fp1);
+	fwrite(Output1, sizeof(BYTE), ImgSize1, fp1);
+	fclose(fp1);
+	free(Image1);
+	free(Output1);
+	// memory leak
+
+	BITMAPFILEHEADER hf2;
+	BITMAPINFOHEADER hInfo2; 
+	RGBQUAD hRGB2[256]; 
+	FILE *fp2;
+	fp2 = fopen("lenna.bmp", "rb");
+	if (fp2 == NULL) {
+		printf("File not found\n");
+		return;
+	}
+	fread(&hf2, sizeof(BITMAPFILEHEADER), 1, fp2);
+	fread(&hInfo2, sizeof(BITMAPINFOHEADER), 1, fp2);
+	fread(&hRGB2, sizeof(RGBQUAD), 256, fp2);
+
+	int ImgSize2 = hInfo2.biWidth*hInfo2.biHeight;
+	BYTE * Image2 = (BYTE *)malloc(ImgSize2);
+	BYTE * Output2 = (BYTE *)malloc(ImgSize2); 
+	fread(Image2, sizeof(BYTE), ImgSize2, fp2);
+	fclose(fp2);
+
+	for (int i = 0;i < ImgSize2;i++) {
+		Output2[i] = Image2[i] + 50; // 영상 밝기 +50
+	}
+
+	fp2 = fopen("output2.bmp", "wb");
+	fwrite(&hf2, sizeof(BYTE), sizeof(BITMAPFILEHEADER), fp2);
+	fwrite(&hInfo2, sizeof(BYTE), sizeof(BITMAPINFOHEADER), fp2);
+	fwrite(hRGB2, sizeof(RGBQUAD), 256, fp2);
+	fwrite(Output2, sizeof(BYTE), ImgSize2, fp2);
+	fclose(fp2);
+	free(Image2);
+	free(Output2);
+
+	BITMAPFILEHEADER hf3;
+	BITMAPINFOHEADER hInfo3;
+	RGBQUAD hRGB3[256];
+	FILE *fp3;
+	fp3 = fopen("lenna.bmp", "rb");
+	if (fp3 == NULL) {
+		printf("File not found\n");
+		return;
+	}
+	fread(&hf3, sizeof(BITMAPFILEHEADER), 1, fp3);
+	fread(&hInfo3, sizeof(BITMAPINFOHEADER), 1, fp3);
+	fread(&hRGB3, sizeof(RGBQUAD), 256, fp3);
+
+	int ImgSize3 = hInfo3.biWidth*hInfo3.biHeight;
+	BYTE * Image3 = (BYTE *)malloc(ImgSize3);
+	BYTE * Output3 = (BYTE *)malloc(ImgSize3);
+	fread(Image2, sizeof(BYTE), ImgSize2, fp2);
+	fclose(fp3);
+
+	for (int i = 0;i < ImgSize3;i++) {
+		Output3[i] = 255 - Image3[i]; // 영상 화소 반전
+	}
+
+	fp3 = fopen("output3.bmp", "wb");
+	fwrite(&hf3, sizeof(BYTE), sizeof(BITMAPFILEHEADER), fp3);
+	fwrite(&hInfo3, sizeof(BYTE), sizeof(BITMAPINFOHEADER), fp3);
+	fwrite(hRGB3, sizeof(RGBQUAD), 256, fp3);
+	fwrite(Output3, sizeof(BYTE), ImgSize3, fp3);
+	fclose(fp3);
+	free(Image3);
+	free(Output3);
+}
