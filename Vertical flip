@@ -1,0 +1,8 @@
+void VerticalFlip(BYTE*Img, int W, int H) //영상 상하 반전
+{
+	for (int i = 0;i < H / 2;i++) { // 맨윗 줄 <-> 맨아랫 줄, 맨위에서 두번째줄 <->  맨아래서 두번째 줄 ......
+		for (int j = 0;j < W;j++) {
+			swap(&Img[i*W + j], &Img[(H - 1 - i)*W + j]);
+		}
+	}
+}
