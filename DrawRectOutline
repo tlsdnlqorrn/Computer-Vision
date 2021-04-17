@@ -506,60 +506,55 @@ void DrawRectOutline(BYTE*Img, BYTE*Out, int W, int H)
 {
 	int x1=0, x2=0, y1=0, y2=0;
 
-	for (int i = 1;i < H;i++) {
+	for (int i = 0;i < H;i++) { // 영상의 좌측 상단부터 가로방향 탐색
 		for (int j = 0;j < W;j++) {
-			//printf("%d %d \t\t", j, i);
-			if (Img[i*W + j] ==0) {
-				y1 = i;
-				printf("y1: %d\n", y1);
-				j = W;
-				i = H;
+			if (Img[i*W + j] ==0) { // 현재 픽셀의 화소가 0. 즉, 동공이면 
+				y1 = i; // 그 픽셀의 y좌표를 y1에 저장
+				j = W; // for문 탈출
+				i = H; // 동공의 가장 위쪽 픽셀의 좌표를 저장하기 위함. but 영상의 상하반전으로 실제로는 가장 아래쪽 픽셀임.
 			}
 		}
 	}
-	for (int i = H;i >0;i--) {
-		for (int j = W;j >0;j--) {
-			printf("%d %d\t\t", j, i);
-			if (Img[i*W + j] == 0) {
-				y2 = i;
-				printf("y2: %d\n", y2);
-				j = 0;
-				i = 0;
+	for (int i = H-1;i>=0;i--) { // 영상의 우측 하단부터 가로방향 탐색
+		for (int j =W-1;j>=0;j--) {
+			if (Img[i*W + j] == 0) { // 현재 픽셀의 화소가 0. 즉, 동공이면 
+				y2 = i; // 그 픽셀의 y좌표를 y2에 저장
+				j = 0; // for문 탈출
+				i = 0; // 동공의 가장 아래쪽 픽셀의 좌표를 저장하기 위함. but 영상의 상하반전으로 실제로는 가장 위쪽 픽셀임.
 			}
 		}
 	}
-	for (int j = 0;j < W;j++) {
+	for (int j = 0;j < W;j++) { // 영상의 좌측 상단부터 세로방향 탐색
 		for (int i = 0;i < H;i++) {
-			if (Img[i*W+j] == 0) {
-				x1 = j;
-				printf("x1: %d\n", x1);
-				i = H;
-				j = W;
-			}
-		}
-		//printf("%d %d\t\t", j, i);
-
-	}
-	for (int j = W;j >0;j--) {
-		for (int i = H;i>0;i--) {
-			if (Img[i*W+j] == 0) {
-				x2	 = j;
-				printf("x2: %d\n", x2);
-
-				i = 0;
-				j = 0;
+			if (Img[i*W+j] == 0) { // 현재 픽셀의 화소가 0. 즉, 동공이면 
+				x1 = j; // 그 픽셀의 x좌표를 x1에 저장
+				i = H; // for문 탈출
+				j = W; // 동공의 가장 왼쪽 픽셀의 좌표를 저장하기 위함.
 			}
 		}
 	}
-	
+	for (int j = W-1;j >=0;j--) { // 영상의 우측 하단부터 세로방향 탐색
+		for (int i = H-1;i>=0;i--) {
+			if (Img[i*W+j] == 0) { // 현재 픽셀의 화소가 0. 즉, 동공이면
+				x2	 = j; // 그 픽셀의 x좌표를 x2에 저장
+				i = 0; // for문 탈출
+				j = 0; // 동겅의 가장 오른쪽 필셀의 좌표를 저장하기 위함.
+			}
+		}
+	}
+	printf("y1: %d\n", y1);
+	printf("y2: %d\n", y2);
+	printf("x1: %d\n", x1);
+	printf("x2: %d\n", x2);
+
 	for (int i = x1;i<x2;i++)
-		Out[y1*W+i] = 255;
+		Out[y1*W+i] = 255; // 외접 사각형의 윗변 (실제로는 아랫변임)
 	for(int i=x1;i<x2;i++)
-		Out[y2*W+i] = 0;
+		Out[y2*W+i] = 255; // 외접 사각형의 아랫변 (실제로는 윗변임)
 	for (int i = y1;i<y2;i++)
-		Out[i*W + x1] = 255;
-	for (int i = y1;i<y2;i++)
-		Out[i*W+x2] = 255;
+		Out[i*W + x1] = 255; // 외접 사각형의 왼쪽변
+	for (int i = y1;i < y2;i++)
+		Out[i*W + x2] = 255; // 외접 사각형의 오른쪽변
 }
 void main() {
 	BITMAPFILEHEADER hf; //14bytes
