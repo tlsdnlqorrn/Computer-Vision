@@ -1,0 +1,13 @@
+void BinaryImageEdgeDetection(BYTE*Bin, BYTE*Out, int W, int H)
+{
+	for (int i = 0;i < H;i++) {
+		for (int j = 0;j < W; j++) {
+			if (Bin[i*W + j] == 0) { // if 전경화소 이면서
+				if (!(Bin[(i - 1)*W + j] == 0 && Bin[(i + 1)*W + j] == 0
+					&& Bin[i*W + j - 1] == 0 && Bin[i*W + j + 1] == 0)) // 4방향 화소 중 하나라도 전경이 아니라면
+																		  //Output[i*W+j] = 0; // 경계 화소를 검게 출력. 배경이 흰 색일 때
+					Out[i*W + j] = 255; // 경계화소를 흰색으로 출력
+			}
+		}
+	}
+}
