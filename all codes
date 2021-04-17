@@ -1,0 +1,832 @@
+#pragma warning(disable:4996) // 보안 에러 방지
+#include<stdio.h>
+#include<stdlib.h> // 동적할당
+#include<Windows.h> // 필요한 구조체 정보 포함
+#include<math.h>
+
+void InverseImage(BYTE *Img, BYTE *Out, int W, int H) // 영상 반전
+{
+	int ImgSize = W*H;
+	for (int i = 0;i < ImgSize;i++) {
+		Out[i] = 255 - Img[i];
+	}
+}
+void BrightnessAdj(BYTE *Img, BYTE *Out, int W, int H, int Val) // 영상 밝기 조절
+{
+	int ImgSize = W*H;
+	// 클리핑 처리
+	for (int i = 0;i < ImgSize;i++) {
+		if (Img[i] + Val > 255) { 
+			Out[i] = 255;
+		}
+		else if (Img[i] + Val < 0) {
+			Out[i] = 0;
+		}
+		else
+			Out[i] = Img[i] + Val;
+	}
+}
+void ContrastAdj(BYTE *Img, BYTE *Out, int W, int H, double Val) // 영상 대비 조절
+{
+	int ImgSize = W*H;
+	// 클리핑 처리
+	for (int i = 0;i < ImgSize;i++) {
+		if (Img[i] * Val > 255.0) { // 255가 아닌 255.0인 이유? Val이 double type 이기 때문에 연산값도 double type 이다.
+			Out[i] = 255;
+		}
+		/*else if (Img[i] * Val < 0) 
+			Out[i] = 0;
+		}*/ // Val 값을 곱하면 음수가 나올 수 없음.
+		else
+			Out[i] = (BYTE)(Img[i] * Val);
+	}
+}
+void ObtainHistogram(BYTE *Img, int * Histo, int W, int H) // 히스토그램 구하기
+{
+	int ImgSize = W*H;
+	for (int i = 0;i < ImgSize;i++) {
+		Histo[Img[i]]++; // 화소값에 해당하는 Histo의 인덱스를 ++
+	}
+}
+void ObtainAHistogram(int * Histo, int  * AHisto) // 누적 히스토그램 구하기
+{
+	for (int i = 0;i < 256;i++) {
+		for (int j = 0;j < i;j++) {
+			AHisto[i] += Histo[j];
+		}
+	}
+}
+void HistogramStretching(BYTE *Img, BYTE* Out, int *Histo, int W, int H) // 스트레칭 = 가시성 향상
+{
+	int ImgSize = W*H;
+	BYTE Low, High;
+	for (int i = 0;i < 256;i++) {
+		if (Histo[i] != 0) {
+			Low = i;
+			break;
+		}
+	}
+	for (int i = 255;i >= 0;i--) {
+		if (Histo[i] != 0) {
+			High = i;
+			break;
+		}
+	}
+	for (int i = 0;i < ImgSize;i++) { 
+		Out[i] = (BYTE)((Img[i] - Low) / (double)(High - Low)*255.0); // 나누기 연산 후 실수가 나올 것이기 때문에 255.0을 곱함
+	}
+}
+void HistogramEqualization(BYTE *Img, BYTE* Out, int *AHisto, int W, int H) // 히스토그램 평활화
+{
+	int ImgSize = W*H;
+	int Nt = W*H, Gmax = 255;
+	double Ratio = Gmax / (double)Nt; // 나누기 연산은 실수로 출력
+	BYTE NormSum[256];
+	for (int i = 0;i < 256;i++) {
+		NormSum[i] = (BYTE)(Ratio*AHisto[i]);
+	}
+	for (int i = 0;i < ImgSize;i++) {
+		Out[i] = NormSum[Img[i]];
+	}
+}
+void Binarization(BYTE*Img, BYTE*Out, int W, int H, int Threshold) // 이진화
+{
+	int ImgSize = W*H;
+	for (int i = 0;i < ImgSize;i++) {
+		if (Img[i] < Threshold)
+			Out[i] = 0;
+		else
+			Out[i] = 255;
+	}
+}
+int GonzalezBinThresh(BYTE * Img, int * Histo, int W, int H)
+{
+	int ImgSize = W*H;
+	BYTE Low = 0, High = 0;
+	int initT; //초기 임계치
+	int finT; // 새로운 임계치
+	int G1, G2, A; // 임계치보다 큰 화소 영역: G1, 임계치보다 작은 화소 영역: G2
+	double u1, u2; // 영역 G1, G2 의 화소의 각각의 평균값
+
+	// 밝기 최대, 최소 구해서 초기 임계치 계산
+	for (int i = 0;i < 256;i++) { 
+		if (Histo[i] != 0) {
+			Low = i;
+			break;
+		}
+	}
+	for (int i = 255;i >= 0;i--) {
+		if (Histo[i] != 0) {
+			High = i;
+			break;
+		}
+	}
+	initT = (int)(Low + High) / 2.0; // 초기 임계치
+
+	while (1) {
+		G1 = 0;
+		G2 = 0;
+		A = 0;
+		for (int i = 0;i < 256;i++) {
+			if (i >= initT) {
+				G1 += i*Histo[i];
+				A += Histo[i];
+			}
+			else
+				G2 += i*Histo[i];
+		}
+		u1 = G1 / (double)A;
+		u2 = G2 / (double)(ImgSize - A);
+
+		// 새로운 임계치 계산
+		finT = (int)(u1 + u2) / 2.0;
+
+		// 오차 계산
+		if ((initT - finT) >= 3)
+			initT = finT; // 초기임계치와 최종 임계치가 3이상의 차이가 나면 임계치값 없데이트 후 다시 반복.
+		else
+			break; //오차가 작으면 성공. 반복 종료.
+	}
+	return finT;
+}
+/* 교수님 Gonzalez */
+BYTE DetermThGonzalez(int*H) // histogram이 진행된 상태이므로 화소 밝기순으로 정렬됨.
+{
+	BYTE ep = 3; // 오류의 기준인 입실론
+	BYTE Low, High; // 영상에서 가장 밝은 화소와 어두운 화소를 저장
+	BYTE Th; // 초기 임계치 저장
+	BYTE NewTh; // 최종 임계치 저장
+	int G1 = 0, G2 = 0, cnt1 = 0, cnt2 = 0, mu1, mu2;
+
+	for (int i = 0;i < 256;i++) { // 순차 탐색
+		if (H[i] != 0) { // H[i]가 0이 아니라면 = i번째 화소에 영상이 존재한다면
+			Low = i; // 첫 화소 = 가장 어두운 화소
+			break;
+		}
+	}
+	for (int i = 255;i >= 0;i--) { // 역탐색
+		if (H[i] != 0) { // H[i]가 0이 아니라면 = i번째 화소에 영상이 존재한다면
+			High = i; // 첫 화소 = 가장 밝은 화소
+			break;
+		}
+	}
+
+	Th = (Low + High) / 2; // 단순 밝기값을 이용해 초기 임계치 저장
+
+	while (1) { // 무한 반복
+		for (int i = Th + 1;i <= High;i++) { // Th 값은 G2에 포함시키기로 함.
+			G1 += (H[i] * i); // G1: 임계치 ~ 가장 밝은 값까지의 영역.
+			cnt1 += H[i]; // G1 영역에 해당하는 화소 수 저장.
+		}
+		for (int i = Low;i <= Th;i++) {
+			G2 += (H[i] * i); // G2: 가장 어두운 값 ~ 임계치까지의 영역.
+			cnt2 += H[i]; // G2 영역에 해당하는 화소 수 저장.
+		}
+
+		if (cnt1 == 0) cnt1 = 1; // cnt가 0일때 밑의 나눗셈에 오류가 남으로
+		if (cnt2 == 0) cnt2 = 1; // 오류를 처리해준다.
+		mu1 = G1 / cnt1; // G1 영역 화소들의 밝기의 평균값
+		mu2 = G2 / cnt2; // G2 영역 화소들의 밝기의 평균값
+
+		NewTh = mu1 + mu2 / 2; // 최종 임계치 저장
+
+		if (abs(NewTh - Th) < ep) { // if 초기임계치와 최종임계치가 3 미만의 차. 즉, 오차가 작다면 반복 종료.
+			Th = NewTh; // 임계치값 업데이트. 별 차이가 없어 크게 중요한건 아님.
+			break;
+		}
+		else {
+			Th = NewTh; // 오차가 3이상으로 크면 임계치 없데이트 후 재반복.
+		}
+		G1 = G2 = cnt1 = cnt2 = 0;
+	}
+	return Th;
+}
+void AverageConv(BYTE *Img, BYTE * Out, int W, int H) // 박스  평활화
+{
+	double Kernel[3][3] = { 0.11111, 0.11111, 0.11111,
+										0.11111, 0.11111, 0.11111,
+										0.11111, 0.11111, 0.11111 };
+	double SumProduct = 0.0;
+	for (int i = 1;i < H-1;i++) { // Y 좌표(행). kernel 의 시작은 (0,0) 이 아니라 (1,1). 즉 상하좌우에 1씩 마진을 주어야함
+		for (int j = 1;j < W-1;j++) { // X 좌표(열)
+			for (int m = -1;m <= 1;m++) { // Kernel 의 행. m이 센터라면 -1은 m 위의 화소, 0은 자기 자신, 1은 아래 화소
+				for (int n = -1;n <= 1;n++) { // Kernel 의 열. n이 센터라면 -1은 n 왼쪽 화소, 0은 자기 자신, 1은 오늘쪽 화소
+					SumProduct += Img[(i+m)*W+(j+n)] * Kernel[m+1][n+1];
+				}
+			}
+			Out[i*W + j] = (BYTE)SumProduct;
+			SumProduct = 0.0 ;
+		}
+	}
+}
+void GaussAvrConv(BYTE *Img, BYTE * Out, int W, int H) // 가우시안 평활화
+{
+	double Kernel[3][3] = { 0.0625, 0.125, 0.0625,
+										0.125, 0.25, 0.125,
+										0.0625, 0.125, 0.0625 };
+	double SumProduct = 0.0;
+	for (int i = 1;i < H - 1;i++) { // Y 좌표(행). kernel 의 시작은 (0,0) 이 아니라 (1,1). 즉 상하좌우에 1씩 마진을 주어야함
+		for (int j = 1;j < W - 1;j++) { // X 좌표(열)
+			for (int m = -1;m <= 1;m++) { // Kernel 의 행. m이 센터라면 -1은 m 위의 화소, 0은 자기 자신, 1은 아래 화소
+				for (int n = -1;n <= 1;n++) { // Kernel 의 열. n이 센터라면 -1은 n 왼쪽 화소, 0은 자기 자신, 1은 오늘쪽 화소
+					SumProduct += Img[(i + m)*W + (j + n)] * Kernel[m + 1][n + 1];
+				}
+			}
+			Out[i*W + j] = (BYTE)SumProduct;
+			SumProduct = 0.0;
+		}
+	}
+}
+void Prewitt_X_Conv(BYTE *Img, BYTE * Out, int W, int H) // Prewitt 마스크 X
+{
+	double Kernel[3][3] = { -1.0, 0.0, 1.0,
+										-1.0, 0.0, 1.0,
+										-1.0, 0.0, 1.0 };
+	double SumProduct = 0.0;
+	for (int i = 1;i < H - 1;i++) { // Y 좌표(행). kernel 의 시작은 (0,0) 이 아니라 (1,1). 즉 상하좌우에 1씩 마진을 주어야함
+		for (int j = 1;j < W - 1;j++) { // X 좌표(열)
+			for (int m = -1;m <= 1;m++) { // Kernel 의 행. m이 센터라면 -1은 m 위의 화소, 0은 자기 자신, 1은 아래 화소
+				for (int n = -1;n <= 1;n++) { // Kernel 의 열. n이 센터라면 -1은 n 왼쪽 화소, 0은 자기 자신, 1은 오늘쪽 화소
+					SumProduct += Img[(i + m)*W + (j + n)] * Kernel[m + 1][n + 1];
+				}
+			}
+			// 0 ~ 765 =====> 0 ~ 255
+			Out[i*W + j] = abs((long)SumProduct)/3;
+			SumProduct = 0.0;
+		}
+	}
+}
+void Prewitt_Y_Conv(BYTE *Img, BYTE * Out, int W, int H) // Prewitt 마스크 X
+{
+	double Kernel[3][3] = { -1.0, -1.0, -1.0,
+											0.0 , 0.0, 0.0,
+											1.0, 1.0, 1.0 };
+	double SumProduct = 0.0;
+	for (int i = 1;i < H - 1;i++) { // Y 좌표(행). kernel 의 시작은 (0,0) 이 아니라 (1,1). 즉 상하좌우에 1씩 마진을 주어야함
+		for (int j = 1;j < W - 1;j++) { // X 좌표(열)
+			for (int m = -1;m <= 1;m++) { // Kernel 의 행. m이 센터라면 -1은 m 위의 화소, 0은 자기 자신, 1은 아래 화소
+				for (int n = -1;n <= 1;n++) { // Kernel 의 열. n이 센터라면 -1은 n 왼쪽 화소, 0은 자기 자신, 1은 오늘쪽 화소
+					SumProduct += Img[(i + m)*W + (j + n)] * Kernel[m + 1][n + 1];
+				}
+			}
+			// 0 ~ 765 =====> 0 ~ 255
+			Out[i*W + j] = abs((long)SumProduct) / 3;
+			SumProduct = 0.0;
+		}
+	}
+}
+void Sobel_X_Conv(BYTE *Img, BYTE * Out, int W, int H) // Prewitt 마스크 X
+{
+	double Kernel[3][3] = { -1.0, 0.0, 1.0,
+										-2.0, 0.0, 2.0,
+										-1.0, 0.0, 1.0 };
+	double SumProduct = 0.0;
+	for (int i = 1;i < H - 1;i++) { // Y 좌표(행). kernel 의 시작은 (0,0) 이 아니라 (1,1). 즉 상하좌우에 1씩 마진을 주어야함
+		for (int j = 1;j < W - 1;j++) { // X 좌표(열)
+			for (int m = -1;m <= 1;m++) { // Kernel 의 행. m이 센터라면 -1은 m 위의 화소, 0은 자기 자신, 1은 아래 화소
+				for (int n = -1;n <= 1;n++) { // Kernel 의 열. n이 센터라면 -1은 n 왼쪽 화소, 0은 자기 자신, 1은 오늘쪽 화소
+					SumProduct += Img[(i + m)*W + (j + n)] * Kernel[m + 1][n + 1];
+				}
+			}
+			// 0 ~ 1020 =====> 0 ~ 255
+			Out[i*W + j] = abs((long)SumProduct) /4;
+			SumProduct = 0.0;
+		}
+	}
+}
+void Sobel_Y_Conv(BYTE *Img, BYTE * Out, int W, int H) // Prewitt 마스크 X
+{
+	double Kernel[3][3] = { -1.0, -2.0, -1.0,
+										0.0 , 0.0, 0.0,
+										1.0, 2.0, 1.0 };
+	double SumProduct = 0.0;
+	for (int i = 1;i < H - 1;i++) { // Y 좌표(행). kernel 의 시작은 (0,0) 이 아니라 (1,1). 즉 상하좌우에 1씩 마진을 주어야함
+		for (int j = 1;j < W - 1;j++) { // X 좌표(열)
+			for (int m = -1;m <= 1;m++) { // Kernel 의 행. m이 센터라면 -1은 m 위의 화소, 0은 자기 자신, 1은 아래 화소
+				for (int n = -1;n <= 1;n++) { // Kernel 의 열. n이 센터라면 -1은 n 왼쪽 화소, 0은 자기 자신, 1은 오늘쪽 화소
+					SumProduct += Img[(i + m)*W + (j + n)] * Kernel[m + 1][n + 1];
+				}
+			}
+			// 0 ~ 1020 =====> 0 ~ 255
+			Out[i*W + j] = abs((long)SumProduct) / 4;
+			SumProduct = 0.0;
+		}
+	}
+}
+void Laplace_Conv(BYTE *Img, BYTE * Out, int W, int H) // Prewitt 마스크 X
+{
+	double Kernel[3][3] = { -1.0, -1.0, -1.0,
+										-1.0 , 8.0, -1.0,
+										-1.0, -1.0, -1.0 };
+	double SumProduct = 0.0;
+	for (int i = 1;i < H - 1;i++) { // Y 좌표(행). kernel 의 시작은 (0,0) 이 아니라 (1,1). 즉 상하좌우에 1씩 마진을 주어야함
+		for (int j = 1;j < W - 1;j++) { // X 좌표(열)
+			for (int m = -1;m <= 1;m++) { // Kernel 의 행. m이 센터라면 -1은 m 위의 화소, 0은 자기 자신, 1은 아래 화소
+				for (int n = -1;n <= 1;n++) { // Kernel 의 열. n이 센터라면 -1은 n 왼쪽 화소, 0은 자기 자신, 1은 오늘쪽 화소
+					SumProduct += Img[(i + m)*W + (j + n)] * Kernel[m + 1][n + 1];
+				}
+			}
+			// 0 ~ 2040 =====> 0 ~ 255
+			Out[i*W + j] = abs((long)SumProduct) / 8;
+			SumProduct = 0.0;
+		}
+	}
+}
+void Laplace_Conv_DC(BYTE *Img, BYTE * Out, int W, int H) // Prewitt 마스크 X
+{
+	double Kernel[3][3] = { -1.0, -1.0, -1.0,
+		-1.0 , 9.0, -1.0,
+		-1.0, -1.0, -1.0 };
+	double SumProduct = 0.0;
+	for (int i = 1;i < H - 1;i++) { // Y 좌표(행). kernel 의 시작은 (0,0) 이 아니라 (1,1). 즉 상하좌우에 1씩 마진을 주어야함
+		for (int j = 1;j < W - 1;j++) { // X 좌표(열)
+			for (int m = -1;m <= 1;m++) { // Kernel 의 행. m이 센터라면 -1은 m 위의 화소, 0은 자기 자신, 1은 아래 화소
+				for (int n = -1;n <= 1;n++) { // Kernel 의 열. n이 센터라면 -1은 n 왼쪽 화소, 0은 자기 자신, 1은 오늘쪽 화소
+					SumProduct += Img[(i + m)*W + (j + n)] * Kernel[m + 1][n + 1];
+				}
+			}
+			// 클리핑
+			//Out[i*W + j] = abs((long)SumProduct) / 8;
+			if ((long)SumProduct > 255)
+				Out[i*W + j] = 255;
+			else if
+				(SumProduct < 0.0)
+				Out[i*W + j] = 0;
+			else
+				Out[i*W + j] = (BYTE)SumProduct;
+			SumProduct = 0.0;
+		}
+	}
+}
+void SaveBMPFile(BITMAPFILEHEADER hf, BITMAPINFOHEADER hInfo, RGBQUAD *hRGB, BYTE* Output, int	W, int H, const char*FileName)
+{
+	FILE *fp = fopen(FileName, "wb");
+	fwrite(&hf, sizeof(BYTE), sizeof(BITMAPFILEHEADER), fp);
+	fwrite(&hInfo, sizeof(BYTE), sizeof(BITMAPINFOHEADER), fp);
+	fwrite(hRGB, sizeof(RGBQUAD), 256, fp);
+	fwrite(Output, sizeof(BYTE), W*H, fp);
+	fclose(fp);
+}
+void swap(BYTE*a, BYTE*b)
+{
+	BYTE temp = *a;
+	*a = *b;
+	*b = temp;
+}
+BYTE Median(BYTE*arr, int size)
+{
+	const int S = size;
+	// 오름차순 정렬
+	for (int i = 0;i < size-1;i++) { // pivot index
+		for (int j = i + 1;j < size;j++) { // 비교대상 index
+			if (arr[i] > arr[j])
+				swap(&arr[i], &arr[j]); // call by reference
+		}
+	}
+	return arr[S/2]; // 중간값 return
+}
+BYTE MaxPooling(BYTE*arr, int size)
+{
+	const int S = size;
+
+	for (int i = 0;i < size - 1;i++) { // pivot index
+		for (int j = i + 1;j < size;j++) { // 비교대상 index
+			if (arr[i] > arr[j])
+				swap(&arr[i], &arr[j]); // call by reference
+		}
+	}
+	return arr[S-1]; // 최대값 return
+}
+BYTE MinPooling(BYTE*arr, int size)
+{
+	const int S = size;
+
+	for (int i = 0;i < size - 1;i++) { // pivot index
+		for (int j = i + 1;j < size;j++) { // 비교대상 index
+			if (arr[i] > arr[j])
+				swap(&arr[i], &arr[j]); // call by reference
+		}
+	}
+	return arr[0]; // 최대값 return
+}
+int push(short* stackx, short* stacky, int arr_size, short vx, short vy, int* top)
+{
+	if (*top >= arr_size) return(-1);
+	(*top)++;
+	stackx[*top] = vx;
+	stacky[*top] = vy;
+	return(1);
+}
+int pop(short* stackx, short* stacky, short* vx, short* vy, int* top)
+{
+	if (*top == 0) return(-1);
+	*vx = stackx[*top];
+	*vy = stacky[*top];
+	(*top)--;
+	return(1);
+}
+
+// GlassFire 알고리즘을 이용한 라벨링 함수
+void m_BlobColoring(BYTE* CutImage, int width, int height)
+{
+	int i, j, m, n, top, area, Out_Area, index, BlobArea[1000];
+	long k;
+	short curColor = 0, r, c;
+	//	BYTE** CutImage2;
+	Out_Area = 1;
+
+	// 스택으로 사용할 메모리 할당
+	short* stackx = new short[height * width];
+	short* stacky = new short[height * width];
+	short* coloring = new short[height * width];
+
+	int arr_size = height * width;
+	// 라벨링된 픽셀을 저장하기 위해 메모리 할당
+
+	for (k = 0; k < height * width; k++) coloring[k] = 0;  // 메모리 초기화
+
+	for (i = 0; i < height; i++)
+	{
+		index = i * width;
+		for (j = 0; j < width; j++)
+		{
+			// 이미 방문한 점이거나 픽셀값이 255가 아니라면 처리 안함
+			if (coloring[index + j] != 0 || CutImage[index + j] != 255)
+				continue;
+			r = i; c = j; top = 0; area = 1;
+			curColor++;
+
+			while (1)
+			{
+			GRASSFIRE:
+				for (m = r - 1; m <= r + 1; m++)
+				{
+					index = m * width;
+					for (n = c - 1; n <= c + 1; n++)
+					{
+						//관심 픽셀이 영상경계를 벗어나면 처리 안함
+						if (m < 0 || m >= height || n < 0 || n >= width) continue;
+
+						if ((int)CutImage[index + n] == 255 && coloring[index + n] == 0)
+						{
+							coloring[index + n] = curColor; // 현재 라벨로 마크
+							if (push(stackx, stacky, arr_size, (short)m, (short)n, &top) == -1) continue;
+							r = m; c = n; area++;
+							goto GRASSFIRE;
+						}
+					}
+				}
+				if (pop(stackx, stacky, &r, &c, &top) == -1) break;
+			}
+			if (curColor < 1000)
+				BlobArea[curColor] = area; // curColor: 라벨링된 영역의 수
+		}
+	}
+
+	float grayGap = 255.0f / (float)curColor; // 255를 라벨링 할 영역의 수로 나눈 간격으로 영역의 밝기값을 변화시킴.
+
+	// 가장 면적이 넓은 영역을 찾아내기 위함 
+	for (i = 1; i <= curColor; i++)
+	{
+		if (BlobArea[i] >= BlobArea[Out_Area]) Out_Area = i; // 가장 면적이 넓은 영역의 인덱스 저장
+	}
+	// CutImage(: 이진화 된 output 영상을 받아오는 배열) 배열 클리어~
+	for (k = 0; k < width * height; k++) CutImage[k] = 255; // 1) 전부 다 255로 채우고
+
+	// coloring에 저장된 라벨링 결과중 (Out_Area에 저장된) 영역이 가장 큰 것만 CutImage에 저장
+	for (k = 0; k < width * height; k++)
+	{
+		if (coloring[k] == Out_Area) 
+			CutImage[k] = 0;  // 가장 큰  면적을 0. 즉, 검게 출력 (size filitering)
+		//if (BlobArea[coloring[k]]>500) CutImage[k] = 0;  // 영역이 500 보다 큰 부분만 출력
+		//CutImage[k] = (unsigned char)(coloring[k] * grayGap); // 전체 라벨링 결과.  2) 라벨링 할 영역만 색을 채운다.
+	}
+
+	delete[] coloring;
+	delete[] stackx;
+	delete[] stacky;
+}
+void BinaryImageEdgeDetection(BYTE*Bin, BYTE*Out, int W, int H)
+{
+	for (int i = 0;i < H;i++) {
+		for (int j = 0;j < W; j++) {
+			if (Bin[i*W + j] == 0) { // if 전경화소 이면서
+				if (!(Bin[(i - 1)*W + j] == 0 && Bin[(i + 1)*W + j] == 0
+					&& Bin[i*W + j - 1] == 0 && Bin[i*W + j + 1] == 0)) // 4방향 화소 중 하나라도 전경이 아니라면
+																		  //Output[i*W+j] = 0; // 경계 화소를 검게 출력. 배경이 흰 색일 때
+					Out[i*W + j] = 255; // 경계화소를 흰색으로 출력
+			}
+		}
+	}
+}
+void DrawCrossLine(BYTE*Img, BYTE*Out, int W, int H) // 무게중심을 지나는 크로스라인 그리기
+{
+	int ROI = 0; 
+	int sumx = 0, sumy = 0;
+	int cenx = 0, ceny = 0; 
+
+	/* 경계영역이 표시되어있을 경우
+	for (int i = 0;i < H;i++) {
+		for (int j = 0;j < W;j++) {
+			if (Img[i*W + j] == 255) {
+				sumx += j; // 경계 영역의 x좌표
+				sumy += i; // 경계 영역의 y좌표
+				ROI++; //  경계 영역의 픽셀 수
+			}
+		}
+	}
+	*/
+	for (int i = 0;i < H;i++) {
+		for (int j = 0;j < W; j++) {
+			if (Img[i*W + j] == 0) { // if 전경화소 이면서
+				sumx += j; // 영역의 x좌표
+				sumy += i; // 영역의 y좌표
+				ROI++; // 영역의 픽셀 수
+			}
+		}
+	}
+	cenx = sumx / ROI; // 무게중심의 x 좌표
+	ceny = sumy / ROI; // 무게중심의 y좌표
+	for (int i = 0;i < H;i++) {
+		for (int j = 0;j < W;j++) {
+			if (j == cenx || i == ceny) // if 픽셀의 x, y좌표 중 하나라도 무게중심 좌표와 동일하면
+				Out[i*W + j] = 255; // 흰색으로 출력 (경계선)
+		}
+	}
+}
+void DrawRectOutline(BYTE*Img, BYTE*Out, int W, int H) // 동공에 외접하는 사각형 그리기
+{
+	int x1=0, x2=0, y1=0, y2=0;
+
+	for (int i = 0;i < H;i++) { // 영상의 좌측 상단부터 가로방향 탐색
+		for (int j = 0;j < W;j++) {
+			if (Img[i*W + j] ==0) { // 현재 픽셀의 화소가 0. 즉, 동공이면 
+				y1 = i; // 그 픽셀의 y좌표를 y1에 저장
+				j = W; // for문 탈출
+				i = H; // 동공의 가장 위쪽 픽셀의 좌표를 저장하기 위함. but 영상의 상하반전으로 실제로는 가장 아래쪽 픽셀임.
+			}
+		}
+	}
+	for (int i = H-1;i>=0;i--) { // 영상의 우측 하단부터 가로방향 탐색
+		for (int j =W-1;j>=0;j--) {
+			if (Img[i*W + j] == 0) { // 현재 픽셀의 화소가 0. 즉, 동공이면 
+				y2 = i; // 그 픽셀의 y좌표를 y2에 저장
+				j = 0; // for문 탈출
+				i = 0; // 동공의 가장 아래쪽 픽셀의 좌표를 저장하기 위함. but 영상의 상하반전으로 실제로는 가장 위쪽 픽셀임.
+			}
+		}
+	}
+	for (int j = 0;j < W;j++) { // 영상의 좌측 상단부터 세로방향 탐색
+		for (int i = 0;i < H;i++) {
+			if (Img[i*W+j] == 0) { // 현재 픽셀의 화소가 0. 즉, 동공이면 
+				x1 = j; // 그 픽셀의 x좌표를 x1에 저장
+				i = H; // for문 탈출
+				j = W; // 동공의 가장 왼쪽 픽셀의 좌표를 저장하기 위함.
+			}
+		}
+	}
+	for (int j = W-1;j >=0;j--) { // 영상의 우측 하단부터 세로방향 탐색
+		for (int i = H-1;i>=0;i--) {
+			if (Img[i*W+j] == 0) { // 현재 픽셀의 화소가 0. 즉, 동공이면
+				x2	 = j; // 그 픽셀의 x좌표를 x2에 저장
+				i = 0; // for문 탈출
+				j = 0; // 동겅의 가장 오른쪽 필셀의 좌표를 저장하기 위함.
+			}
+		}
+	}
+	printf("y1: %d\n", y1);
+	printf("y2: %d\n", y2);
+	printf("x1: %d\n", x1);
+	printf("x2: %d\n", x2);
+
+	for (int i = x1;i<x2;i++)
+		Out[y1*W+i] = 255; // 외접 사각형의 윗변 (실제로는 아랫변임)
+	for(int i=x1;i<x2;i++)
+		Out[y2*W+i] = 255; // 외접 사각형의 아랫변 (실제로는 윗변임)
+	for (int i = y1;i<y2;i++)
+		Out[i*W + x1] = 255; // 외접 사각형의 왼쪽변
+	for (int i = y1;i < y2;i++)
+		Out[i*W + x2] = 255; // 외접 사각형의 오른쪽변
+}
+void VerticalFlip(BYTE*Img, int W, int H) //영상 상하 반전
+{
+	for (int i = 0;i < H / 2;i++) { // 맨윗 줄 <-> 맨아랫 줄, 맨위에서 두번째줄 <->  맨아래서 두번째 줄 ......
+		for (int j = 0;j < W;j++) {
+			swap(&Img[i*W + j], &Img[(H - 1 - i)*W + j]);
+		}
+	}
+}
+void HorizontalFlip(BYTE*Img, int W, int H) // 영상 좌우 반전 (미러링) 
+{
+	for (int j = 0;j < W / 2;j++) { // 맨왼쪽 줄 <-> 맨오른쪾 줄, 맨왼쪽에서 두번째줄 <->  맨오른쪽에서 두번째 줄 ......
+		for (int i = 0;i < H;i++) {
+			swap(&Img[i*W + j], &Img[i*W + (W - 1 - j)]);
+		}
+	}
+}
+void Translation(BYTE*Image, BYTE*Output, int W, int H, int Tx, int Ty) // 영상 이동
+{
+	// Tx, Ty =  x, y 의 이동량.
+	Ty *= -1; //영상의 상하반전을 이유로 y값의 이동은 부호를 반대로 해준다.
+
+	for (int i = 0;i < H;i++) {
+		for (int j = 0;j < W;j++) {
+			if ((i + Ty < H&&i + Ty >= 0) && (j + Tx < W&&j + Tx >= 0)) { // 이동 후 영상의 원래 범위를 벗어나지 않는 화소만 이동.
+				Output[(i + Ty)*W + (j + Tx)] = Image[i*W + j]; // 원래 화소값을 Tx, Ty 만큼 이동
+			}
+		}
+	}
+}
+void Scailing(BYTE*Image, BYTE*Output, int W, int H, double SF_X, double SF_Y) // 영상 확대, 축소
+{
+	/*순방향 사상*/
+	/*double SF_X = 1.3, SF_Y = 1.5; // scailing factor
+	int tempX, tempY;
+	for (int i = 0;i < H;i++) {
+	for (int j = 0;j < W;j++) {
+	tempX = int(j*SF_X); // j번째 화소를 SF_X 만큼 scailing
+	tempY = int(i*SF_Y); // i번째 화소를 SF_Y 만큼 scailing
+	if (tempX< H &&tempY<W) // 확대 후 영상의 원래 범위를 벗어나지 않는 화소만 이동.
+	Output[tempY*W+tempX] = Image[i*W+j]; // 영상 확대 시 hole 이, 축소 시 중첩 문제가 발생. 즉 역방향 사상으로 진행해야 함.
+	}
+	}*/
+	/*역방향 사상*/
+	// SF_X, SF_Y:  scailing factor
+	int tempX, tempY;
+	for (int i = 0;i < H;i++) {
+		for (int j = 0;j < W;j++) {
+			tempX = int(j / SF_X); // 이미  SF_X 만큼 scailing 된 j번째 화소를 역으로 가져옴
+			tempY = int(i / SF_Y); // 이미 SF_Y 만큼 scailing 된  i번째 화소를 역으로 가져옴
+			if (tempX < H &&tempY < W) // 확대 후 영상의 원래 범위를 벗어나지 않는 화소만 이동.
+				Output[i*W + j] = Image[tempY*W + tempX]; // 영상 확대 시 hole 이, 축소 시 중첩 문제가 발생하지 않음.
+		}
+	}
+}
+void Rotation(BYTE*Image, BYTE*Output, int W, int H, int Angle)
+{
+	/*int tempX, tempY;
+	int Angle = 30; // 회전 각도의 degree
+	double Radian = Angle*3.141592 / 180.0; // degree -> radian
+	for (int i = 0;i < H;i++) {
+	for (int j = 0;j < W;j++) {
+	tempX = int(cos(Radian)*j-sin(Radian)*i); // 원래 화소 행렬에 회전 행렬을 곱해서 tempX 에 대입.
+	tempY = int(sin(Radian)*j+cos(Radian)*i); // 원래 화소의 j에 회전 행렬을 곱해서 tempY 에 대입.
+	if ((tempY<H&&tempY>=0)&&(tempX<W&&j+tempX>=0)) // 확대 후 영상의 원래 범위를 벗어나지 않는 화소만 이동.
+	Output[tempY*W + tempX] = Image[i*W + j]; // 영상 확대 시 hole 이, 축소 시 중첩 문제가 발생하지 않음.
+	}
+	}*/
+	int tempX, tempY;
+	// Angle:  회전 각도의 degree
+	double Radian = Angle*3.141592 / 180.0; // degree -> radian
+	for (int i = 0;i < H;i++) {
+		for (int j = 0;j < W;j++) {
+			tempX = int(cos(Radian)*j + sin(Radian)*i); // 원래 화소 행렬에 회전 행렬을 곱해서 tempX 에 대입.
+			tempY = int(-sin(Radian)*j + cos(Radian)*i); // 원래 화소의 j에 회전 행렬을 곱해서 tempY 에 대입.
+			if ((tempY<H&&tempY >= 0) && (tempX<W&&j + tempX >= 0)) // 확대 후 영상의 원래 범위를 벗어나지 않는 화소만 이동.
+				Output[i*W + j] = Image[tempY*W + tempX]; // 영상 확대 시 hole 이, 축소 시 중첩 문제가 발생하지 않음.
+		}
+	}
+}
+
+void main() {
+	BITMAPFILEHEADER hf; //14bytes
+	BITMAPINFOHEADER hInfo; // 40bytes
+	RGBQUAD hRGB[256]; // 1024bytes
+	FILE *fp;
+	fp = fopen("LENNA.bmp", "rb");
+	if (fp == NULL) {
+		printf("File not found\n");
+		return;
+	}
+	fread(&hf, sizeof(BITMAPFILEHEADER), 1, fp); // fread 함수는 첫 번째 parameter로 주솟값(pointer)을 요구
+	fread(&hInfo, sizeof(BITMAPINFOHEADER), 1, fp);
+	fread(&hRGB, sizeof(RGBQUAD), 256, fp); // 배열은 이름 자체가 주솟값을 의미
+											  // header 정보를 다 읽어서 저장함.
+	int ImgSize = hInfo.biWidth*hInfo.biHeight;
+	BYTE * Image = (BYTE *)malloc(ImgSize); // 원본 영상
+	// =BYTE Image1[ImgSize1]
+	BYTE * Output = (BYTE *)malloc(ImgSize); // 처리 후 영상
+	fread(Image, sizeof(BYTE), ImgSize, fp);
+	fclose(fp);
+	int H = hInfo.biHeight;
+	int W = hInfo.biWidth;
+
+	int Histo[256] = { 0 };
+	int AHisto[256] = { 0 };
+
+
+	/* 교수님  Gonzalez */
+	/*
+	BYTE Th;
+	ObtainHistogram(Image, Histo, W, H);
+	Th = DetermThGonzalez(Histo);
+	Binarization(Image, Output, W, H, Th);
+	*/
+
+	//ObtainHistogram(Image, Histo, hInfo.biWidth, hInfo.biHeight);
+	//ObtainAHistogram(Histo, AHisto);
+	//HistogramEqualization(Image, Output, AHisto, hInfo.biWidth, hInfo.biHeight);
+	//int Thresh = GonzalezBinThresh(Image, Histo, hInfo.biWidth, hInfo.biHeight);
+	//Binarization(Image, Output, hInfo.biWidth, hInfo.biHeight, Thresh);
+
+	//AverageConv(Image, Output, hInfo.biWidth, hInfo.biHeight);
+	//GaussAvrConv(Image, Output, hInfo.biWidth, hInfo.biHeight);
+
+	BYTE * Temp = (BYTE *)malloc(ImgSize); // 임시 배열
+	/*Sobel_X_Conv(Image, Temp, hInfo.biWidth, hInfo.biHeight);
+	Sobel_Y_Conv(Image, Output, hInfo.biWidth, hInfo.biHeight);
+	for (int i = 0;i < ImgSize;i++) {
+		if (Temp[i] > Output[i])
+			Output[i] = Temp[i];
+	}
+	Binarization(Output, Output, hInfo.biWidth, hInfo.biHeight,	40);*/
+
+	//GaussAvrConv(Image, Temp, hInfo.biWidth, hInfo.biHeight);
+	//Laplace_Conv_DC(Temp, Output, hInfo.biWidth, hInfo.biHeight);
+
+	//HistogramStretching(Image, Output, Histo, hInfo.biWidth, hInfo.biHeight);
+	//for (int i = 0;i < 256;i++)  printf("%d\t%d\n", i, Histo[i]);
+
+	//InverseImage(Image, Output, hInfo.biWidth, hInfo.biHeight);
+	//BrightnessAdj(Image, Output, hInfo.biWidth, hInfo.biHeight, 70);
+	//ContrastAdj(Image, Output, hInfo.biWidth, hInfo.biHeight, 1.5);
+
+
+	//3x3 필터링의 경우
+	/*BYTE temp[9]; // 임시배열
+	int W = hInfo.biWidth, H = hInfo.biHeight;
+	int i, j;
+	for (i = 1;i < H - 1;i++) {
+		for (j = 1;j < W - 1;j++) {
+			temp[0] = Image[(i - 1)*W + j - 1];
+			temp[1] = Image[(i - 1)*W + j];
+			temp[2] = Image[(i - 1)*W + j + 1];
+			temp[3] = Image[i*W + j - 1];
+			temp[4] = Image[i*W + j]; // 현재 (x, y)
+			temp[5] = Image[i*W + j + 1];
+			temp[6] = Image[(i + 1)*W + j - 1];
+			temp[7] = Image[(i + 1)*W + j];
+			temp[8] = Image[(i + 1)*W + j + 1];
+			Output[i*W + j] = Median(temp, 9);
+		}
+	}*/
+
+	/*choose filter size*/
+	/*
+	int length = 9;  // 마스크의 한 변의 길이
+	int margin = length / 2; // 상하좌우에 마진으로 남길 픽셀의 길이
+	int wsize = length * length; // window size
+	byte* temp = (byte*)malloc(sizeof(byte) * wsize); //  영상을 담을 임시 배열
+	int w = hInfo.biWidth, h = hInfo.biHeight; // 영상의 가로, 세로 사이즈
+	int i, j, m, n;
+	for (i = margin; i < h - margin; i++) { // 마진을 제외한 kernel center 의 y좌표
+		for (j = margin; j < w - margin; j++) { // 마진을 제외한 kernel center 의 x 좌표
+			for (m = -margin; m <= margin; m++) { // kernel 을 중심으로 세로방향 이동
+				for (n = -margin; n <= margin; n++) { // kernel 을 중심으로 가로방향 이동
+					temp[(m + margin) * length + (n + margin)] = Image[(i + m)*w + j + n];
+					// 영상을 temp 배열에 담는다.
+				}
+			}
+			Output[i * w + j] = Median(temp, wsize);
+			// temp 배열을 median 필터링 처리하여 output 배열에 넣는다.
+		}
+	}
+	free(temp);
+	*/
+
+	// 라벨링 전 이진화
+	//Binarization(Image, Temp, W, H, 50);
+	//InverseImage(Temp, Temp, W, H);
+	//m_BlobColoring(Temp, W, H);
+	//for (int i = 0;i < ImgSize;i++)
+	//	//Output[i] = 255; // 경계 검출을 위해 영상을 흰색으로 만듦.
+	//	Output[i] = Image[i];
+
+	//BinaryImageEdgeDetection(Temp, Output, W, H);
+
+	// 이진화 및 라벨링까지 된 상태에서 무게중심을 지나는 크로스라인 그리기 
+	//DrawCrossLine(Temp, Output, W, H);
+
+	// 이진화 및 라벨링까지 된 상태에서 동공에 외접하는 사각형 그리기
+	//DrawRectOutline(Temp, Output, W, H);
+
+	//VerticalFlip(Image, W, H);
+	//HorizontalFlip(Image, W, H);
+	//Translation(Image, Output, W, H, 100, 40);
+	//Scailing(Image, Output, W, H, 2.0, 0.7);
+	Rotation(Image, Output, W, H, 30);
+	
+
+	SaveBMPFile(hf, hInfo, hRGB, Output, W, H, "Rotation_reverse.bmp");
+
+	//fp = fopen("output.bmp", "wb");
+	//fwrite(&hf, sizeof(BYTE), sizeof(BITMAPFILEHEADER), fp);
+	//fwrite(&hInfo, sizeof(BYTE), sizeof(BITMAPINFOHEADER), fp);
+	//fwrite(hRGB, sizeof(RGBQUAD), 256, fp);
+	//fwrite(Output, sizeof(BYTE), ImgSize, fp);
+	//fclose(fp);
+	//free(Image);
+	//free(Output);
+	//free(Temp);
+	// memory leak
+}
