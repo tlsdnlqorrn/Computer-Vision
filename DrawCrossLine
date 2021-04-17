@@ -1,3 +1,97 @@
+1. 이진화
+void Binarization(BYTE*Img, BYTE*Out, int W, int H, int Threshold) // 이진화
+{
+	int ImgSize = W*H;
+	for (int i = 0;i < ImgSize;i++) {
+		if (Img[i] < Threshold)
+			Out[i] = 0;
+		else
+			Out[i] = 255;
+	}
+}
+
+2. 라벨링
+void m_BlobColoring(BYTE* CutImage, int width, int height)
+{
+	int i, j, m, n, top, area, Out_Area, index, BlobArea[1000];
+	long k;
+	short curColor = 0, r, c;
+	//	BYTE** CutImage2;
+	Out_Area = 1;
+
+	// 스택으로 사용할 메모리 할당
+	short* stackx = new short[height * width];
+	short* stacky = new short[height * width];
+	short* coloring = new short[height * width];
+
+	int arr_size = height * width;
+	// 라벨링된 픽셀을 저장하기 위해 메모리 할당
+
+	for (k = 0; k < height * width; k++) coloring[k] = 0;  // 메모리 초기화
+
+	for (i = 0; i < height; i++)
+	{
+		index = i * width;
+		for (j = 0; j < width; j++)
+		{
+			// 이미 방문한 점이거나 픽셀값이 255가 아니라면 처리 안함
+			if (coloring[index + j] != 0 || CutImage[index + j] != 255)
+				continue;
+			r = i; c = j; top = 0; area = 1;
+			curColor++;
+
+			while (1)
+			{
+			GRASSFIRE:
+				for (m = r - 1; m <= r + 1; m++)
+				{
+					index = m * width;
+					for (n = c - 1; n <= c + 1; n++)
+					{
+						//관심 픽셀이 영상경계를 벗어나면 처리 안함
+						if (m < 0 || m >= height || n < 0 || n >= width) continue;
+
+						if ((int)CutImage[index + n] == 255 && coloring[index + n] == 0)
+						{
+							coloring[index + n] = curColor; // 현재 라벨로 마크
+							if (push(stackx, stacky, arr_size, (short)m, (short)n, &top) == -1) continue;
+							r = m; c = n; area++;
+							goto GRASSFIRE;
+						}
+					}
+				}
+				if (pop(stackx, stacky, &r, &c, &top) == -1) break;
+			}
+			if (curColor < 1000)
+				BlobArea[curColor] = area; // curColor: 라벨링된 영역의 수
+		}
+	}
+
+	float grayGap = 255.0f / (float)curColor; // 255를 라벨링 할 영역의 수로 나눈 간격으로 영역의 밝기값을 변화시킴.
+
+	// 가장 면적이 넓은 영역을 찾아내기 위함 
+	for (i = 1; i <= curColor; i++)
+	{
+		if (BlobArea[i] >= BlobArea[Out_Area]) Out_Area = i; // 가장 면적이 넓은 영역의 인덱스 저장
+	}
+	// CutImage(: 이진화 된 output 영상을 받아오는 배열) 배열 클리어~
+	for (k = 0; k < width * height; k++) CutImage[k] = 255; // 1) 전부 다 255로 채우고
+
+	// coloring에 저장된 라벨링 결과중 (Out_Area에 저장된) 영역이 가장 큰 것만 CutImage에 저장
+	for (k = 0; k < width * height; k++)
+	{
+		if (coloring[k] == Out_Area) 
+			CutImage[k] = 0;  // 가장 큰  면적을 0. 즉, 검게 출력 (size filitering)
+		//if (BlobArea[coloring[k]]>500) CutImage[k] = 0;  // 영역이 500 보다 큰 부분만 출력
+		//CutImage[k] = (unsigned char)(coloring[k] * grayGap); // 전체 라벨링 결과.  2) 라벨링 할 영역만 색을 채운다.
+	}
+
+	delete[] coloring;
+	delete[] stackx;
+	delete[] stacky;
+}
+
+3. 크로스라인
 void DrawCrossLine(BYTE*Img, BYTE*Out, int W, int H) // 무게중심을 지나는 크로스라인 그리기
 {
 	int ROI = 0; 
