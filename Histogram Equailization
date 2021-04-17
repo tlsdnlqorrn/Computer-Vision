@@ -1,0 +1,30 @@
+void Histogram(BYTE *Img, int * Histo, int W, int H) // 히스토그램 구하기
+{
+	int ImgSize = W*H;
+	for (int i = 0;i < ImgSize;i++) {
+		Histo[Img[i]]++; // 화소값에 해당하는 Histo의 인덱스를 ++
+	}
+}
+
+void AHistogram(int * Histo, int  * AHisto) // 누적 히스토그램 구하기
+{
+	for (int i = 0;i < 256;i++) {
+		for (int j = 0;j < i;j++) {
+			AHisto[i] += Histo[j];
+		}
+	}
+}
+
+void HistogramEqualization(BYTE *Img, BYTE* Out, int *AHisto, int W, int H) // 히스토그램 평활화
+{
+	int ImgSize = W*H;
+	int Nt = W*H, Gmax = 255;
+	double Ratio = Gmax / (double)Nt; // 나누기 연산은 실수로 출력
+	BYTE NormSum[256];
+	for (int i = 0;i < 256;i++) {
+		NormSum[i] = (BYTE)(Ratio*AHisto[i]);
+	}
+	for (int i = 0;i < ImgSize;i++) {
+		Out[i] = NormSum[Img[i]];
+	}
+}
