@@ -1,0 +1,8 @@
+void HorizontalFlip(BYTE*Img, int W, int H) // 영상 좌우 반전 (미러링) 
+{
+	for (int j = 0;j < W / 2;j++) { // 맨왼쪽 줄 <-> 맨오른쪾 줄, 맨왼쪽에서 두번째줄 <->  맨오른쪽에서 두번째 줄 ......
+		for (int i = 0;i < H;i++) {
+			swap(&Img[i*W + j], &Img[i*W + (W - 1 - j)]);
+		}
+	}
+}
