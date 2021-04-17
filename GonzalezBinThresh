@@ -1,103 +1,3 @@
-#pragma warning(disable:4996) // 보안 에러 방지
-#include<stdio.h>
-#include<stdlib.h> // 동적할당
-#include<Windows.h> // 필요한 구조체 정보 포함
-
-void InverseImage(BYTE *Img, BYTE *Out, int W, int H) // 영상 반전
-{
-	int ImgSize = W*H;
-	for (int i = 0;i < ImgSize;i++) {
-		Out[i] = 255 - Img[i];
-	}
-}
-void BrightnessAdj(BYTE *Img, BYTE *Out, int W, int H, int Val) // 영상 밝기 조절
-{
-	int ImgSize = W*H;
-	// 클리핑 처리
-	for (int i = 0;i < ImgSize;i++) {
-		if (Img[i] + Val > 255) { 
-			Out[i] = 255;
-		}
-		else if (Img[i] + Val < 0) {
-			Out[i] = 0;
-		}
-		else
-			Out[i] = Img[i] + Val;
-	}
-}
-void ContrastAdj(BYTE *Img, BYTE *Out, int W, int H, double Val) // 영상 대비 조절
-{
-	int ImgSize = W*H;
-	// 클리핑 처리
-	for (int i = 0;i < ImgSize;i++) {
-		if (Img[i] * Val > 255.0) { // 255가 아닌 255.0인 이유? Val이 double type 이기 때문에 연산값도 double type 이다.
-			Out[i] = 255;
-		}
-		/*else if (Img[i] * Val < 0) 
-			Out[i] = 0;
-		}*/ // Val 값을 곱하면 음수가 나올 수 없음.
-		else
-			Out[i] = (BYTE)(Img[i] * Val);
-	}
-}
-void ObtainHistogram(BYTE *Img, int * Histo, int W, int H) // 히스토그램 구하기
-{
-	int ImgSize = W*H;
-	for (int i = 0;i < ImgSize;i++) {
-		Histo[Img[i]]++;
-	}
-}
-void ObtainAHistogram(int * Histo, int  * AHisto) // 누적 히스토그램 구하기
-{
-	for (int i = 0;i < 256;i++) {
-		for (int j = 0;j < i;j++) {
-			AHisto[i] += Histo[j];
-		}
-	}
-}
-void HistogramStretching(BYTE *Img, BYTE* Out, int *Histo, int W, int H) // 스트레칭 = 가시성 향상
-{
-	int ImgSize = W*H;
-	BYTE Low, High;
-	for (int i = 0;i < 256;i++) {
-		if (Histo[i] != 0) {
-			Low = i;
-			break;
-		}
-	}
-	for (int i = 255;i >= 0;i--) {
-		if (Histo[i] != 0) {
-			High = i;
-			break;
-		}
-	}
-	for (int i = 0;i < ImgSize;i++) { 
-		Out[i] = (BYTE)((Img[i] - Low) / (double)(High - Low)*255.0); // 나누기 연산 후 실수가 나올 것이기 때문에 255.0을 곱함
-	}
-}
-void HistogramEqualization(BYTE *Img, BYTE* Out, int *AHisto, int W, int H) // 히스토그램 평활화
-{
-	int ImgSize = W*H;
-	int Nt = W*H, Gmax = 255;
-	double Ratio = Gmax / (double)Nt; // 나누기 연산은 실수로 출력
-	BYTE NormSum[256];
-	for (int i = 0;i < 256;i++) {
-		NormSum[i] = (BYTE)(Ratio*AHisto[i]);
-	}
-	for (int i = 0;i < ImgSize;i++) {
-		Out[i] = NormSum[Img[i]];
-	}
-}
-void Binarization(BYTE*Img, BYTE*Out, int W, int H, int Threshold) // 이진화
-{
-	int ImgSize = W*H;
-	for (int i = 0;i < ImgSize;i++) {
-		if (Img[i] < Threshold)
-			Out[i] = 0;
-		else
-			Out[i] = 255;
-	}
-}
 int GonzalezBinThresh(BYTE * Img, int * Histo, int W, int H)
 {
 	int ImgSize = W*H;
@@ -120,7 +20,7 @@ int GonzalezBinThresh(BYTE * Img, int * Histo, int W, int H)
 			break;
 		}
 	}
-	initT = (int)(Low + High) / 2.0;
+	initT = (int)(Low + High) / 2.0; // 초기 임계치
 
 	while (1) {
 		G1 = 0;
@@ -142,59 +42,63 @@ int GonzalezBinThresh(BYTE * Img, int * Histo, int W, int H)
 
 		// 오차 계산
 		if ((initT - finT) >= 3)
-			initT = finT;
+			initT = finT; // 초기임계치와 최종 임계치가 3이상의 차이가 나면 임계치값 없데이트 후 다시 반복.
 		else
-			break;
+			break; //오차가 작으면 성공. 반복 종료.
 	}
 	return finT;
 }
-void main() {
-	BITMAPFILEHEADER hf; //14bytes
-	BITMAPINFOHEADER hInfo; // 40bytes
-	RGBQUAD hRGB[256]; // 1024bytes
-	FILE *fp;
-	fp = fopen("coin.bmp", "rb");
-	if (fp == NULL) {
-		printf("File not found\n");
-		return;
+
+
+/* 교수님 Gonzalez */
+BYTE DetermThGonzalez(int*H) // histogram이 진행된 상태이므로 화소 밝기순으로 정렬됨.
+{
+	BYTE ep = 3; // 오류의 기준인 입실론
+	BYTE Low, High; // 영상에서 가장 밝은 화소와 어두운 화소를 저장
+	BYTE Th; // 초기 임계치 저장
+	BYTE NewTh; // 최종 임계치 저장
+	int G1 = 0, G2 = 0, cnt1 = 0, cnt2 = 0, mu1, mu2;
+
+	for (int i = 0;i < 256;i++) { // 순차 탐색
+		if (H[i] != 0) { // H[i]가 0이 아니라면 = i번째 화소에 영상이 존재한다면
+			Low = i; // 첫 화소 = 가장 어두운 화소
+			break;
+		}
 	}
-	fread(&hf, sizeof(BITMAPFILEHEADER), 1, fp); // fread 함수는 첫 번째 parameter로 주솟값(pointer)을 요구
-	fread(&hInfo, sizeof(BITMAPINFOHEADER), 1, fp);
-	fread(&hRGB, sizeof(RGBQUAD), 256, fp); // 배열은 이름 자체가 주솟값을 의미
-											  // header 정보를 다 읽어서 저장함.
-	int ImgSize = hInfo.biWidth*hInfo.biHeight;
-	BYTE * Image = (BYTE *)malloc(ImgSize); // 원본 영상
-											  // =BYTE Image1[ImgSize1]
-	BYTE * Output = (BYTE *)malloc(ImgSize); // 처리 후 영상
-	fread(Image, sizeof(BYTE), ImgSize, fp);
-	fclose(fp);
+	for (int i = 255;i >=0;i--) { // 역탐색
+		if (H[i] != 0) { // H[i]가 0이 아니라면 = i번째 화소에 영상이 존재한다면
+			High = i; // 첫 화소 = 가장 밝은 화소
+			break;
+		}
+	}
 
-	int Histo[256] = { 0 };
-	int AHisto[256] = { 0 };
+	Th = (Low + High) / 2; // 단순 밝기값을 이용해 초기 임계치 저장
 
-	ObtainHistogram(Image, Histo, hInfo.biWidth, hInfo.biHeight);
-	//ObtainAHistogram(Histo, AHisto);
-	//HistogramEqualization(Image, Output, AHisto, hInfo.biWidth, hInfo.biHeight);
-	int Thresh = GonzalezBinThresh(Image, Histo, hInfo.biWidth, hInfo.biHeight);
-	Binarization(Image, Output, hInfo.biWidth, hInfo.biHeight,	Thresh);
+	while (1) { // 무한 반복
+		for (int i = Th + 1;i <= High;i++) { // Th 값은 G2에 포함시키기로 함.
+			G1 += (H[i] * i); // G1: 임계치 ~ 가장 밝은 값까지의 영역.
+			cnt1 += H[i]; // G1 영역에 해당하는 화소 수 저장.
+		}
+		for (int i = Low;i <= Th;i++) {
+			G2 += (H[i] * i); // G2: 가장 어두운 값 ~ 임계치까지의 영역.
+			cnt2 += H[i]; // G2 영역에 해당하는 화소 수 저장.
+		}
 
-	
-	//HistogramStretching(Image, Output, Histo, hInfo.biWidth, hInfo.biHeight);
+		if (cnt1 == 0) cnt1 = 1; // cnt가 0일때 밑의 나눗셈에 오류가 남으로
+		if (cnt2 == 0) cnt2 = 1; // 오류를 처리해준다.
+		mu1 = G1 / cnt1; // G1 영역 화소들의 밝기의 평균값
+		mu2 = G2 / cnt2; // G2 영역 화소들의 밝기의 평균값
 
-	//for (int i = 0;i < 256;i++)  printf("%d\t%d\n", i, Histo[i]);
+		NewTh = mu1 + mu2 / 2; // 최종 임계치 저장
 
-	//InverseImage(Image, Output, hInfo.biWidth, hInfo.biHeight);
-	//BrightnessAdj(Image, Output, hInfo.biWidth, hInfo.biHeight, 70);
-	//ContrastAdj(Image, Output, hInfo.biWidth, hInfo.biHeight, 1.5);
-	
-	fp = fopen("output.bmp", "wb");
-	fwrite(&hf, sizeof(BYTE), sizeof(BITMAPFILEHEADER), fp);
-	fwrite(&hInfo, sizeof(BYTE), sizeof(BITMAPINFOHEADER), fp);
-	fwrite(hRGB, sizeof(RGBQUAD), 256, fp);
-	fwrite(Output, sizeof(BYTE), ImgSize, fp);
-	fclose(fp);
-	free(Image);
-	free(Output);
-	// memory leak
-
+		if (abs(NewTh - Th) < ep) { // if 초기임계치와 최종임계치가 3 미만의 차. 즉, 오차가 작다면 반복 종료.
+			Th = NewTh; // 임계치값 업데이트. 별 차이가 없어 크게 중요한건 아님.
+			break;
+		}
+		else {
+			Th = NewTh; // 오차가 3이상으로 크면 임계치 없데이트 후 재반복.
+		}
+		G1 = G2 = cnt1 = cnt2 = 0;
+	}
+	return Th;
 }
