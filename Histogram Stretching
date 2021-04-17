@@ -1,0 +1,28 @@
+void ObtainHistogram(BYTE *Img, int * Histo, int W, int H) // 히스토그램 구하기
+{
+	int ImgSize = W*H;
+	for (int i = 0;i < ImgSize;i++) {
+		Histo[Img[i]]++; // 화소값에 해당하는 Histo의 인덱스를 ++
+	}
+}
+
+void HistogramStretching(BYTE *Img, BYTE* Out, int *Histo, int W, int H) // 스트레칭 = 가시성 향상
+{
+	int ImgSize = W*H;
+	BYTE Low, High;
+	for (int i = 0;i < 256;i++) {
+		if (Histo[i] != 0) {
+			Low = i;
+			break;
+		}
+	}
+	for (int i = 255;i >= 0;i--) {
+		if (Histo[i] != 0) {
+			High = i;
+			break;
+		}
+	}
+	for (int i = 0;i < ImgSize;i++) { 
+		Out[i] = (BYTE)((Img[i] - Low) / (double)(High - Low)*255.0); // 나누기 연산 후 실수가 나올 것이기 때문에 255.0을 곱함
+	}
+}
